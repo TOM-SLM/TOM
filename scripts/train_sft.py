@@ -15,7 +15,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from model import TOMConfig, TOMForCausalLM
-from dataset import PretrainSampler
+from dataset import SFTSampler
 
 warnings.filterwarnings("ignore")
 
@@ -31,7 +31,6 @@ def train_epoch(epoch, wandb):
         X = item["X"].to(args.device)
         Y = item["Y"].to(args.device)
         loss_mask = item["loss_mask"].to(args.device)
-
         lr = get_lr(
             epoch * iter_per_epoch + step,
             args.epochs * iter_per_epoch,
@@ -78,7 +77,7 @@ def train_epoch(epoch, wandb):
             if wandb is not None:
                 wandb.log(
                     {
-                        "loss": loss.item() * args.accumulation_steps,
+                        "loss": loss * args.accumulation_steps,
                         "lr": optimizer.param_groups[-1]["lr"],
                         "epoch_Time": spend_time / (step + 1) * iter_per_epoch // 60
                         - spend_time // 60,
@@ -88,8 +87,7 @@ def train_epoch(epoch, wandb):
         if (step + 1) % args.save_interval == 0:
             model.eval()
             moe_path = "_moe" if lm_config.use_moe else ""
-            ckp = f"{args.out_dir}/pretrain_{lm_config.hidden_size}{moe_path}.pth"
-
+            ckp = f"{args.out_dir}/sft_{lm_config.hidden_size}{moe_path}.pth"
             state_dict = model.state_dict()
             state_dict = {k.replace("model._orig_mod.", "model."): v.half() for k, v in state_dict.items()}  # 半精度保存
             torch.save(state_dict, ckp)
@@ -98,17 +96,23 @@ def train_epoch(epoch, wandb):
 
 def init_model(lm_config):
     tokenizer = AutoTokenizer.from_pretrained("model")
-    model = TOMForCausalLM(lm_config).to(args.device)
+    model = TOMForCausalLM(lm_config)
+    moe_path = "_moe" if lm_config.use_moe else ""
+    ckp = f"{args.out_dir}/pretrain_{lm_config.hidden_size}{moe_path}.pth"
+    state_dict = torch.load(ckp, map_location=args.device)
+    model.load_state_dict(state_dict, strict=False)
+
     print(
-        f"LLM训练参数量: {sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.3f}M"
+        f"LLM训练参数量: {sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.2f}M"
     )
+    model = model.to(args.device)
     return model, tokenizer
 
 
 def init_dataset(tokenizer):
     train_ds = load_dataset("json", data_files=args.data_path, split="all")
     train_ds = train_ds.map(
-        PretrainSampler(tokenizer, max_length=args.max_seq_len),
+        SFTSampler(tokenizer, max_length=args.max_seq_len),
         batched=False,
         num_proc=os.cpu_count(),
     )
@@ -125,20 +129,19 @@ def init_dataset(tokenizer):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="TOM Pretraining")
+    parser = argparse.ArgumentParser(description="TOM SFT")
     parser.add_argument("--out-dir", type=str, default="output")
-    # 若要以最快速度实现zero则epochs设置为1轮；否则应当利用有限的数据训练2~6个epochs。
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--learning-rate", type=float, default=5e-4)
+    parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--learning-rate", type=float, default=5e-7)
     parser.add_argument(
         "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )
     parser.add_argument("--dtype", type=str, default="bfloat16")
     parser.add_argument("--use-wandb", action="store_true")
-    parser.add_argument("--wandb-project", type=str, default="TOM-Pretrain")
+    parser.add_argument("--wandb-project", type=str, default="TOM-SFT")
     parser.add_argument("--num-workers", type=int, default=1)
-    parser.add_argument("--accumulation-steps", type=int, default=8)
+    parser.add_argument("--accumulation-steps", type=int, default=1)
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--warmup-iters", type=int, default=0)
     parser.add_argument("--log-interval", type=int, default=100)
@@ -147,10 +150,26 @@ if __name__ == "__main__":
     parser.add_argument("--num-hidden-layers", default=8, type=int)
     parser.add_argument("--max-seq-len", default=512, type=int)
     parser.add_argument("--use-moe", default=False, type=bool)
-    parser.add_argument("--data-path", type=str, default="dataset/pretrain.jsonl")
+    parser.add_argument("--data-path", type=str, default="dataset/sft_512.jsonl")
     parser.add_argument("--seed", default=2025, type=int)
     parser.add_argument("--use-compile", action="store_true")
+
     args = parser.parse_args()
+
+    if args.seed > 0:
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed(args.seed)
+
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    if args.use_wandb:
+        import wandb
+
+        wandb_run_name = f"TOM-SFT-Epoch-{args.epochs}-BatchSize-{args.batch_size}-LearningRate-{args.learning_rate}"
+        wandb.init(project=args.wandb_project, name=wandb_run_name)
+    else:
+        wandb = None
 
     lm_config = TOMConfig(
         hidden_size=args.hidden_size,
@@ -158,27 +177,8 @@ if __name__ == "__main__":
         use_moe=args.use_moe,
     )
 
-    os.makedirs(args.out_dir, exist_ok=True)
-
-    tokens_per_iter = args.batch_size * args.max_seq_len
-    device_type = "cuda" if "cuda" in args.device else "cpu"
-
-    args.wandb_run_name = f"TOM-Pretrain-Epoch-{args.epochs}-BatchSize-{args.batch_size}-LearningRate-{args.learning_rate}"
-
-    if args.seed > 0:
-        random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        torch.cuda.manual_seed(args.seed)
-
-    if args.use_wandb:
-        import wandb
-
-        wandb.init(project=args.wandb_project, name=args.wandb_run_name)
-    else:
-        wandb = None
-
-    model, tokenizer = init_model(lm_config)
-    if args.use_compile and "cuda" in args.device:
+    model, tokenizer = init_model(lm_config)    
+    if args.use_compile:
         model.model = torch.compile(model.model)
 
     train_loader = init_dataset(tokenizer)
