@@ -103,9 +103,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Tokenizer", description="Train a tokenizer")
     parser.add_argument("-i", "--data-file", type=str, default=["dataset/pretrain.jsonl"], nargs="+")
     parser.add_argument("-s", "--seed", type=int, default=2025)
+    parser.add_argument("-e", "--eval", action="store_true")
     args = parser.parse_args()
 
     if args.seed > 0:
         random.seed(args.seed) # 固定Seed
-        
-    main(args.data_file)
+    
+    if args.eval:
+        eval_tokenizer()
+    else:
+        main(args.data_file)
