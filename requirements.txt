@@ -1,0 +1,6 @@
+transformers==4.48.0
+tokenizers
+flash-attn
+datasets
+torch
+wandb

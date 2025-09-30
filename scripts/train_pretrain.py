@@ -15,7 +15,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from model.model_base import TOMConfig, TOMForCausalLM
-from dataset import PretrainSampler, PretrainDataset
+from dataset import PretrainSampler
 
 warnings.filterwarnings("ignore")
 
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-hidden-layers", default=8, type=int)
     parser.add_argument("--max-seq-len", default=512, type=int)
     parser.add_argument("--use-moe", default=False, type=bool)
-    parser.add_argument("--data-path", type=str, default="dataset/pretrain_hq.jsonl")
+    parser.add_argument("--data-path", type=str, default="dataset/pretrain.jsonl")
     parser.add_argument("--seed", default=2025, type=int)
     parser.add_argument("--use-compile", action="store_true")
     args = parser.parse_args()
