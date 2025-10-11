@@ -141,6 +141,7 @@ def main():
     for idx, prompt in enumerate(
         prompts if test_mode == 0 else iter(lambda: input("👶: "), "")
     ):
+        prompt = prompt.strip()
         if test_mode == 0:
             print(f"👶: {prompt}")
 

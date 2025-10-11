@@ -118,3 +118,80 @@ class SFTSampler(Sampler):
         )  # 对齐预测位置 - 只有AI的部分才计算损失
 
         return {"X": X, "Y": Y, "loss_mask": loss_mask}
+
+
+class DPOSampler(Sampler):
+    def __init__(self, tokenizer, max_length=4096):
+        super().__init__(tokenizer, max_length)
+        self.padding = (
+            tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+        )
+        self.bos_id = tokenizer(
+            "<|im_start|>assistant", add_special_tokens=False
+        ).input_ids
+        self.eos_id = tokenizer("<|im_end|>", add_special_tokens=False).input_ids
+
+    def __call__(self, item: dict):
+        chosen = item["chosen"]  # 是一个 list，里面包含若干 {role, content}
+        rejected = item["rejected"]  # 同上
+        chosen_prompt = self.tokenizer.apply_chat_template(
+            chosen, tokenize=False, add_generation_prompt=False
+        )
+
+        rejected_prompt = self.tokenizer.apply_chat_template(
+            rejected, tokenize=False, add_generation_prompt=False
+        )
+        chosen_encoding = self.tokenizer(
+            chosen_prompt,
+            truncation=True,
+            max_length=self.max_length,
+            padding="max_length",
+        )
+        rejected_encoding = self.tokenizer(
+            rejected_prompt,
+            truncation=True,
+            max_length=self.max_length,
+            padding="max_length",
+        )
+
+        chosen_input_ids = chosen_encoding["input_ids"]
+        chosen_loss_mask = self._generate_loss_mask(chosen_input_ids)
+
+        rejected_input_ids = rejected_encoding["input_ids"]
+        rejected_loss_mask = self._generate_loss_mask(rejected_input_ids)
+        x_chosen = torch.tensor(chosen_input_ids[:-1], dtype=torch.long)
+        y_chosen = torch.tensor(chosen_input_ids[1:], dtype=torch.long)
+        mask_chosen = torch.tensor(chosen_loss_mask[1:], dtype=torch.long)
+        x_rejected = torch.tensor(rejected_input_ids[:-1], dtype=torch.long)
+        y_rejected = torch.tensor(rejected_input_ids[1:], dtype=torch.long)
+        mask_rejected = torch.tensor(rejected_loss_mask[1:], dtype=torch.long)
+
+        return {
+            "x_chosen": x_chosen,
+            "y_chosen": y_chosen,
+            "mask_chosen": mask_chosen,
+            "x_rejected": x_rejected,
+            "y_rejected": y_rejected,
+            "mask_rejected": mask_rejected,
+        }
+
+    def _generate_loss_mask(self, input_ids):
+        loss_mask = [0] * len(input_ids)
+        i = 0
+        while i < len(input_ids):
+            if input_ids[i : i + len(self.bos_id)] == self.bos_id:
+                start = i + len(self.bos_id)
+                end = start
+                while end < len(input_ids):
+                    if input_ids[end : end + len(self.eos_id)] == self.eos_id:
+                        break
+                    end += 1
+                for j in range(
+                    start + 1, min(end + len(self.eos_id) + 1, self.max_length)
+                ):
+                    loss_mask[j] = 1
+                i = end + len(self.eos_id) if end < len(input_ids) else len(input_ids)
+            else:
+                i += 1
+        return loss_mask
+
