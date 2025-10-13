@@ -4,3 +4,4 @@ flash-attn
 datasets
 torch
 wandb
+openai

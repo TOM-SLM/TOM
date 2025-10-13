@@ -89,7 +89,6 @@ def train_epoch(epoch, wandb):
         probs = logits_to_probs(outputs.logits, y)
         probs = probs * mask
         loss = dpo_loss(ref_probs, probs, mask, beta=0.1)
-        return print("loss:", loss)
         loss = loss / args.accumulation_steps
 
         scaler.scale(loss).backward()
