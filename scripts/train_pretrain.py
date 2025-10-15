@@ -100,7 +100,7 @@ def init_model(lm_config):
     tokenizer = AutoTokenizer.from_pretrained("model")
     model = TOMForCausalLM(lm_config).to(args.device)
     print(
-        f"LLM训练参数量: {sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.3f}M"
+        f"LLM训练参数量: {sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.4f}M"
     )
     return model, tokenizer
 
