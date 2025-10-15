@@ -25,8 +25,8 @@ class Sampler(ABC):
 class PretrainSampler(Sampler):
     """预训练采样器：用于将数据集转换成Token序列，预训练数据格式为jsonl，格式如下：
 
-    {"text": "<|im_start|>请提取出文章中关于人工智能在医疗上的作用。人工智能还将会在医疗、农业、安全防范等领域发挥重要的作用。<|im_end|>"}
-    {"text": "<|im_start|>请从这首诗选出三句话，重新组成另一首新的诗歌。秋天美景尽收眼底，枫叶红艳色。碧空如水流，心情格外好。<|im_end|>"}
+    {"text": "请提取出文章中关于人工智能在医疗上的作用。人工智能还将会在医疗、农业、安全防范等领域发挥重要的作用。"}
+    {"text": "请从这首诗选出三句话，重新组成另一首新的诗歌。秋天美景尽收眼底，枫叶红艳色。碧空如水流，心情格外好。"}
     ...
 
     Example:
@@ -44,7 +44,7 @@ class PretrainSampler(Sampler):
 
         # 使用分词器分词，将文本编码成ID，如果编码后长度大于max_length则截断，如果小于max_length则添加padding
         encoding = self.tokenizer(
-            sample["text"],
+            "<|im_start|>" + sample["text"] + "<|im_end|>",
             max_length=self.max_length,
             padding="max_length",
             truncation=True,

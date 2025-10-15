@@ -1,5 +1,6 @@
 from tokenizers import decoders, models, pre_tokenizers, trainers, Tokenizer
 from transformers import AutoTokenizer
+import numpy as np
 import argparse
 import random
 import json
@@ -99,11 +100,33 @@ def main(data_files):
     eval_tokenizer()
 
 
+def test(data_files):
+    # 加载预训练的Tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("model")
+
+    data = []
+    for file in data_files:
+        with open(file, "r", encoding="utf8") as fp:
+            for line in fp.readlines():
+                item = json.loads(line)
+                tokens = tokenizer(item["text"])
+                data.append(len(tokens["input_ids"]))
+                if len(data) % 100 == 0:
+                    p0 = np.min(data)
+                    p5 = np.percentile(data, 5)
+                    p50 = np.percentile(data, 50)
+                    p95 = np.percentile(data, 95)
+                    p100 = np.max(data)
+                    print(f"total: {len(data)}, min: {p0:.2f}, p5: {p5:.2f}, p50: {p50:.2f}, p95: {p95:.2f}, max: {p100:.2f}", end="\r", flush=True)
+    print()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Tokenizer", description="Train a tokenizer")
     parser.add_argument("-i", "--data-file", type=str, default=["dataset/pretrain.jsonl"], nargs="+")
     parser.add_argument("-s", "--seed", type=int, default=2025)
     parser.add_argument("-e", "--eval", action="store_true")
+    parser.add_argument("-t", "--test", action="store_true")
     args = parser.parse_args()
 
     if args.seed > 0:
@@ -111,5 +134,7 @@ if __name__ == "__main__":
     
     if args.eval:
         eval_tokenizer()
+    elif args.test:
+        test(args.data_file)
     else:
         main(args.data_file)

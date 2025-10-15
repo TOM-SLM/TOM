@@ -145,7 +145,7 @@ if __name__ == "__main__":
     parser.add_argument("--save-interval", type=int, default=100)
     parser.add_argument("--hidden-size", default=512, type=int)
     parser.add_argument("--num-hidden-layers", default=8, type=int)
-    parser.add_argument("--max-seq-len", default=512, type=int)
+    parser.add_argument("--max-seq-len", default=1024, type=int)
     parser.add_argument("--use-moe", default=False, type=bool)
     parser.add_argument("--data-path", type=str, default="dataset/pretrain.jsonl")
     parser.add_argument("--seed", default=2025, type=int)
