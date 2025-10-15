@@ -129,13 +129,18 @@ def main():
         type=int,
         help="0: 预训练模型，1: SFT-Chat模型，2: RLHF-Chat模型，3: Reason模型，4: RLAIF-Chat模型",
     )
+    parser.add_argument("-m", "--manual", action="store_true")
+
     args = parser.parse_args()
 
-    model, tokenizer = init_model(args)
-
-    prompts = get_prompt_datas(args)
-    test_mode = int(input("[0] 自动测试\n[1] 手动输入\n"))
+    model, tokenizer = init_model(args)    
+    prompts = get_prompt_datas(args)    
     streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+
+    if args.manual:
+        test_mode = 1
+    else:
+        test_mode = int(input("[0] 自动测试\n[1] 手动输入\n"))
 
     messages = []
     for idx, prompt in enumerate(
